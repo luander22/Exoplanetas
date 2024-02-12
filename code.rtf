@@ -1,0 +1,816 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2759
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red255\green255\blue255;\red0\green0\blue0;
+\red255\green255\blue255;\red15\green111\blue1;\red0\green0\blue0;\red176\green0\blue210;\red144\green1\blue17;
+\red19\green85\blue52;\red19\green0\blue254;\red101\green76\blue28;\red0\green0\blue0;\red255\green255\blue255;
+\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c0\c1\c1;\cssrgb\c100000\c100000\c99941\c0;\cssrgb\c0\c1\c1;
+\cssrgb\c100000\c100000\c100000\c0;\cssrgb\c0\c49921\c0;\cssrgb\c0\c0\c0;\cssrgb\c75465\c6854\c85747;\cssrgb\c63873\c8097\c7937;
+\cssrgb\c6626\c39991\c26608;\cssrgb\c10885\c11028\c99890;\cssrgb\c47276\c36635\c14556;\cssrgb\c0\c1\c1;\cssrgb\c100000\c100000\c99956\c0;
+\cssrgb\c0\c0\c0\c0;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww26480\viewh18200\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs36 \cf2 \cb3 ######################################################################\
+#  An\'e1lise Exoplanetas - Modelo HLM2 nulo                                                                     \
+#  Dr. Luander Bernardes                                                                                                  \
+#  Data: ago, 2023                                                                                                             \
+#  R vers\'e3o 4.3.1 (2022-10-31)\
+#  Fonte: F\'e1vero e Belfiore, 2017                                                                                        \
+#####################################################################\
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6481\tx7201\tx7921\tx8641\tx9361\tx10081\tx10801\tx11521\tx12242\tx12962\tx13682\tx14402\tx15122\tx15842\tx16562\tx17282\tx18002\tx18723\tx19443\tx20163\tx20883\tx21603\tx22323\tx23043\tx23763\tx24483\tx25204\tx25924\tx26644\tx27364\tx28084\tx28804\tx29524\tx30244\tx30965\tx31685\tx32405\tx33125\tx33845\tx34565\tx35285\tx36005\tx36725\tx37446\tx38166\tx38886\tx39606\tx40326\tx41046\tx41766\tx42486\tx43207\tx43927\tx44647\tx45367\tx46087\li80\fi-80\pardirnatural\partightenfactor0
+\cf2 \cb3 # Instala\'e7\'e3o e carregamento dos pacotes utilizados\
+\
+pacotes <- c("plotly","tidyverse","reshape2","knitr","kableExtra","rgl",\
+             "gghalves","ggdist","tidyquant","car","nlme","lmtest",\
+             "fastDummies","msm","lmeInfo","jtools","gganimate","ggridges",\
+             "viridis","hrbrthemes")\
+\
+options(rgl.debug = TRUE)\
+\
+if(sum(as.numeric(!pacotes %in% installed.packages())) != 0)\{\
+  instalador <- pacotes[!pacotes %in% installed.packages()]\
+  for(i in 1:length(instalador)) \{\
+    install.packages(instalador, dependencies = T)\
+    break()\}\
+  sapply(pacotes, require, character = T) \
+\} else \{\
+  sapply(pacotes, require, character = T) \
+\}\
+\
+# Algoritmo para determina\'e7\'e3o dos erros-padr\'e3o das vari\'e2ncias no componente de efeitos aleat\'f3rios\
+# ATEN\'c7\'c3O: A fun\'e7\'e3o abaixo \'e9 plenamente funcional para modelos do tipo HLM2 e HLM3, desde que estimados pelo pacote nlme\
+\
+stderr_nlme <- function(model)\{\
+  if(base::class(model) != "lme")\{\
+    base::message("Use a lme object model from nlme package")\
+    stop()\}\
+  resume <- base::summary(model)\
+  if(base::length(base::names(model$groups))==1)\{\
+    m.type <- "HLM2"\
+  \} else if(base::length(base::names(model$groups))==2)\{\
+    m.type <- "HLM3"\
+  \}\
+  if(m.type == "HLM2")\{\
+    vcov_matrix <- model$apVar\
+    logs_sd_re <- base::attr(vcov_matrix,"Pars")\
+    if(base::length(logs_sd_re)==2)\{\
+      stderr_tau00 <- msm::deltamethod(~exp(x1)^2,logs_sd_re,vcov_matrix)\
+      stderr_sigma <- msm::deltamethod(~exp(x2)^2,logs_sd_re,vcov_matrix)\
+      results <- base::data.frame(`RE Components`=base::c("Var(v0j)","Var(e)"),\
+                                  `Variance Estimatives`= base::c(base::exp(logs_sd_re)[[1]]^2,\
+                                                                  base::exp(logs_sd_re[[2]])^2),\
+                                  `Std Err.`=base::c(stderr_tau00,\
+                                                     stderr_sigma),\
+                                  z=base::c(base::exp(logs_sd_re)[[1]]^2/stderr_tau00,\
+                                            base::exp(logs_sd_re[[2]])^2/stderr_sigma),\
+                                  `p-value`=base::round(stats::pnorm(q=base::c(base::exp(logs_sd_re)[[1]]^2/stderr_tau00,\
+                                                                               base::exp(logs_sd_re[[2]])^2/stderr_sigma),\
+                                                                     lower.tail=F)*2,3))\
+      return(results)\
+    \}\
+    else\{\
+      stderr_tau00 <- msm::deltamethod(~exp(x1)^2,logs_sd_re,vcov_matrix)\
+      stderr_tau01 <- msm::deltamethod(~exp(x2)^2,logs_sd_re,vcov_matrix)\
+      stderr_sigma <- msm::deltamethod(~exp(x4)^2,logs_sd_re,vcov_matrix)\
+      results <- base::data.frame(Components=base::c("Var(v0j)","Var(v1j)","Var(e)"),\
+                                  Estimatives= base::c(base::exp(logs_sd_re)[[1]]^2,\
+                                                       base::exp(logs_sd_re[[2]])^2,\
+                                                       base::exp(logs_sd_re[[4]])^2),\
+                                  Std_Err=base::c(stderr_tau00,\
+                                                  stderr_tau01,\
+                                                  stderr_sigma),\
+                                  z=base::c(base::exp(logs_sd_re)[[1]]^2/stderr_tau00,\
+                                            base::exp(logs_sd_re[[2]])^2/stderr_tau01,\
+                                            base::exp(logs_sd_re[[4]])^2/stderr_sigma),\
+                                  `p-value`=base::round(stats::pnorm(q=base::c(base::exp(logs_sd_re)[[1]]^2/stderr_tau00,\
+                                                                               base::exp(logs_sd_re[[2]])^2/stderr_tau01,\
+                                                                               base::exp(logs_sd_re[[4]])^2/stderr_sigma),\
+                                                                     lower.tail=F)*2,3))\
+      return(results)\
+    \}\
+  \}\
+  if(m.type == "HLM3")\{\
+    vcov_matrix <- model$apVar\
+    logs_sd_re <-  base::attr(vcov_matrix,"Pars")\
+    if(base::length(logs_sd_re) == 3)\{\
+      stderr_tau_r000 <- msm::deltamethod(~exp(x1)^2,logs_sd_re,vcov_matrix)\
+      stderr_tau_u000 <- msm::deltamethod(~exp(x2)^2,logs_sd_re,vcov_matrix)\
+      stderr_sigma <- msm::deltamethod(~exp(x3)^2,logs_sd_re,vcov_matrix)\
+      results <- base::data.frame(Components=base::c("Var(t00k)","Var(v0jk)","Var(e)"),\
+                                  Estimatives=base::c(base::exp(logs_sd_re)[[2]]^2,\
+                                                      base::exp(logs_sd_re)[[1]]^2,\
+                                                      base::exp(logs_sd_re)[[3]]^2),\
+                                  Std_Err=base::c(stderr_tau_u000,\
+                                                  stderr_tau_r000,\
+                                                  stderr_sigma),\
+                                  z=base::c(base::exp(logs_sd_re)[[2]]^2/stderr_tau_u000,\
+                                            base::exp(logs_sd_re)[[1]]^2/stderr_tau_r000,\
+                                            base::exp(logs_sd_re)[[3]]^2/stderr_sigma),\
+                                  `p-value`=base::round(stats::pnorm(q=base::c(base::exp(logs_sd_re)[[2]]^2/stderr_tau_u000,\
+                                                                               base::exp(logs_sd_re)[[1]]^2/stderr_tau_r000,\
+                                                                               base::exp(logs_sd_re)[[3]]^2/stderr_sigma),\
+                                                                     lower.tail=F)*2,3))\
+      return(results)\
+    \} \
+    else\{\
+      stderr_tau_r000 <- msm::deltamethod(~exp(x1)^2,logs_sd_re,vcov_matrix)\
+      stderr_tau_r100 <- msm::deltamethod(~exp(x2)^2,logs_sd_re,vcov_matrix)\
+      stderr_tau_u000 <- msm::deltamethod(~exp(x4)^2,logs_sd_re,vcov_matrix)\
+      stderr_tau_u100 <- msm::deltamethod(~exp(x5)^2,logs_sd_re,vcov_matrix)\
+      stderr_sigma <- msm::deltamethod(~exp(x7)^2,logs_sd_re,vcov_matrix)\
+      results <- base::data.frame(`RE_Components`=base::c("Var(t00k)","Var(t10k)",\
+                                                          "Var(v0jk)","Var(v1jk)",\
+                                                          "Var(e)"),\
+                                  `Variance Estimatives`=base::c(base::exp(logs_sd_re)[[4]]^2,\
+                                                                 base::exp(logs_sd_re)[[5]]^2,\
+                                                                 base::exp(logs_sd_re)[[1]]^2,\
+                                                                 base::exp(logs_sd_re)[[2]]^2,\
+                                                                 base::exp(logs_sd_re)[[7]]^2),\
+                                  `Std Err.`=base::c(stderr_tau_u000,\
+                                                     stderr_tau_u100,\
+                                                     stderr_tau_r000,\
+                                                     stderr_tau_r100,\
+                                                     stderr_sigma),\
+                                  z=base::c(base::exp(logs_sd_re)[[4]]^2/stderr_tau_u000,\
+                                            base::exp(logs_sd_re)[[5]]^2/stderr_tau_u100,\
+                                            base::exp(logs_sd_re)[[1]]^2/stderr_tau_r000,\
+                                            base::exp(logs_sd_re)[[2]]^2/stderr_tau_r100,\
+                                            base::exp(logs_sd_re)[[7]]^2/stderr_sigma),\
+                                  `p-value`=base::round(stats::pnorm(q=base::c(base::exp(logs_sd_re)[[4]]^2/stderr_tau_u000,\
+                                                                               base::exp(logs_sd_re)[[5]]^2/stderr_tau_u100,\
+                                                                               base::exp(logs_sd_re)[[1]]^2/stderr_tau_r000,\
+                                                                               base::exp(logs_sd_re)[[2]]^2/stderr_tau_r100,\
+                                                                               base::exp(logs_sd_re)[[7]]^2/stderr_sigma),\
+                                                                     lower.tail=F)*2,3))\
+      return(results)\
+    \}\
+  \}\
+\}\
+\
+# Importando o dataset\
+\
+dados <- read.csv("exo01.csv", sep =",")\
+\
+summary(dados)\
+\
+dados <- na.omit(dados)\
+\
+summary(dados)\
+\
+glimpse(dados)\
+\
+# Visualiza\'e7\'e3o da base de dados\
+\
+dados %>%\
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped", \
+                full_width = F, \
+                font_size = 25)\
+\
+# Modelo HLM2 nulo\
+\
+# Estima\'e7\'e3o do modelo nulo para Exoplanetas\
+\
+modelo_nulo_hlm2 <- lme(fixed = esi ~ 1, \
+                        random = ~ 1 | sistema,\
+                        data = dados,\
+                        method = "REML")          # restricted estimation of maximum likelihood (Gelman)\
+\
+# Par\'e2metros do modelo\
+\
+summary(modelo_nulo_hlm2)\
+\
+# Verificando a funcionalidade da fun\'e7\'e3o 'stderr_nlme' \
+\
+stderr_nlme(modelo_nulo_hlm2)\
+\
+\
+# Compara\'e7\'e3o do Modelo HLM2 nulo com um OLS nulo\
+\
+# Estima\'e7\'e3o do modelo OLS nulo\
+\
+modelo_ols_nulo <- lm(formula = esi ~ 1, \
+                      data = dados)\
+\
+# Par\'e2metros do modelo OLS nulo\
+\
+summary(modelo_ols_nulo)\
+\
+# Comparando os LLs dos modelos com a fun\'e7\'e3o lrtest do pacote lmtest\
+\
+lrtest(modelo_ols_nulo, modelo_nulo_hlm2)\
+\
+# Compara\'e7\'e3o entre os LLs dos modelos\
+\
+data.frame(OLS_Nulo = logLik(modelo_ols_nulo),\
+           HLM2_Nulo = logLik(modelo_nulo_hlm2)) %>%\
+  rename(`OLS Nulo` = 1,\
+         `HLM2 Nulo` = 2) %>%\
+  melt() %>%\
+  ggplot(aes(x = variable, y = (abs(-value)), fill = factor(variable))) +\
+  geom_bar(stat = "identity") +\
+  geom_label(aes(label = (round(value,3))), hjust = 1.1, color = "white", size = 7) +\
+  labs(title = "Compara\'e7\'e3o do LL", \
+       y = "LogLik", \
+       x = "Modelo Proposto") +\
+  coord_flip() +\
+  scale_fill_manual("Legenda:",\
+                    values = c("grey25","grey45")) +\
+  theme(legend.title = element_blank(), \
+        panel.background = element_rect("white"),\
+        legend.position = "none",\
+        axis.line = element_line())\
+\
+\
+##############################################################################\
+# Redu\'e7\'e3o de Dimensionalidade - An\'e1lise Fatorial por Componentes Principais\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf2 \cb3 #  Dr. Luander Bernardes                                                                                                  \
+#  Data: ago, 2023                                                                                                             \
+#  R vers\'e3o 4.3.1 (2022-10-31)\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6481\tx7201\tx7921\tx8641\tx9361\tx10081\tx10801\tx11521\tx12242\tx12962\tx13682\tx14402\tx15122\tx15842\tx16562\tx17282\tx18002\tx18723\tx19443\tx20163\tx20883\tx21603\tx22323\tx23043\tx23763\tx24483\tx25204\tx25924\tx26644\tx27364\tx28084\tx28804\tx29524\tx30244\tx30965\tx31685\tx32405\tx33125\tx33845\tx34565\tx35285\tx36005\tx36725\tx37446\tx38166\tx38886\tx39606\tx40326\tx41046\tx41766\tx42486\tx43207\tx43927\tx44647\tx45367\tx46087\li80\fi-80\pardirnatural\partightenfactor0
+\cf2 \cb3 # Fonte: F\'e1vero e Belfiore, 2017\
+############################################################################### \
+\
+# Instala\'e7\'e3o e carregamento dos pacotes utilizados\
+\
+pacotes <- c("plotly", #plataforma gr\'e1fica\
+             "tidyverse", #carregar outros pacotes do R\
+             "ggrepel", #geoms de texto e r\'f3tulo para 'ggplot2' que ajudam a\
+             #evitar sobreposi\'e7\'e3o de textos\
+             "knitr", "kableExtra", #formata\'e7\'e3o de tabelas\
+             "reshape2", #fun\'e7\'e3o 'melt'\
+             "PerformanceAnalytics", #fun\'e7\'e3o 'chart.Correlation' para plotagem\
+             "psych", #elabora\'e7\'e3o da fatorial e estat\'edsticas\
+             "ltm", #determina\'e7\'e3o do alpha de Cronbach pela fun\'e7\'e3o 'cronbach.alpha'\
+             "Hmisc", # matriz de correla\'e7\'f5es com p-valor\
+             "readxl") # importar arquivo Excel\
+\
+if(sum(as.numeric(!pacotes %in% installed.packages())) != 0)\{\
+  instalador <- pacotes[!pacotes %in% installed.packages()]\
+  for(i in 1:length(instalador)) \{\
+    install.packages(instalador, dependencies = T)\
+    break()\}\
+  sapply(pacotes, require, character = T) \
+\} else \{\
+  sapply(pacotes, require, character = T) \
+\}\
+\
+# Carregamento da base de dados\
+\
+dados <- read.csv("kmpca.csv", sep =";")\
+\
+# Visualiza\'e7\'e3o da base de dados\
+\
+dados %>%\
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped", \
+                full_width = FALSE,\
+                font_size = 20)\
+\
+# Estat\'edsticas descritivas\
+\
+summary(dados)\
+\
+# Scatter e ajuste linear entre as vari\'e1veis 'ESI' e 'raio do planeta'\
+\
+dados %>%\
+  ggplot() +\
+  geom_point(aes(x = raio_planeta, y = esi),\
+             color = "darkorchid",\
+             size = 3) +\
+  geom_smooth(aes(x = raio_planeta, y = esi),\
+              color = "orange", \
+              method = "lm", \
+              formula = y ~ x, \
+              se = FALSE,\
+              size = 1.3) +\
+  labs(x = "Raio (raio terrestre)",\
+       y = "ESI") +\
+  theme_bw()\
+\
+# Scatter e ajuste linear entre as vari\'e1veis 'ESI' e 'massa do planeta'\
+\
+dados %>%\
+  ggplot() +\
+  geom_point(aes(x = massa_planeta, y = esi),\
+             color = "darkorchid",\
+             size = 3) +\
+  geom_smooth(aes(x = massa_planeta, y = esi),\
+              color = "orange", \
+              method = "lm", \
+              formula = y ~ x, \
+              se = FALSE,\
+              size = 1.3) +\
+  labs(x = "Massa (massa terrestre)",\
+       y = "ESI") +\
+  theme_bw()\
+\
+# Scatter e ajuste linear entre as vari\'e1veis 'ESI' e 'luminosidade estelar'\
+\
+dados %>%\
+  ggplot() +\
+  geom_point(aes(x = 	st_lum, y = esi),\
+             color = "darkorchid",\
+             size = 3) +\
+  geom_smooth(aes(x = 	st_lum, y = esi),\
+              color = "orange", \
+              method = "lm", \
+              formula = y ~ x, \
+              se = FALSE,\
+              size = 1.3) +\
+  labs(x = "Luminosidade (log luminosidade solar)",\
+       y = "ESI") +\
+  theme_bw()\
+\
+# Coeficientes de correla\'e7\'e3o de Pearson para cada par de vari\'e1veis\
+\
+rho <- rcorr(as.matrix(dados[,1:4]), type="pearson")\
+\
+corr_coef <- rho$r # Matriz de correla\'e7\'f5es\
+corr_sig <- round(rho$P, 5) # Matriz com p-valor dos coeficientes\
+\
+# Elabora\'e7\'e3o de um mapa de calor das correla\'e7\'f5es de Pearson entre as vari\'e1veis\
+\
+ggplotly(\
+  dados[,1:4] %>%\
+    cor() %>%\
+    melt() %>%\
+    rename(Correla\'e7\'e3o = value) %>%\
+    ggplot() +\
+    geom_tile(aes(x = Var1, y = Var2, fill = Correla\'e7\'e3o)) +\
+    geom_text(aes(x = Var1, y = Var2, label = format(Correla\'e7\'e3o, digits = 1)),\
+              size = 5) +\
+    scale_fill_viridis_b() +\
+    labs(x = NULL, y = NULL) +\
+    theme_bw())\
+\
+# Visualiza\'e7\'e3o das distribui\'e7\'f5es das vari\'e1veis, scatters, valores das correla\'e7\'f5es\
+\
+chart.Correlation(dados[, 1:4], histogram = TRUE, pch = "+")\
+\
+### Elabora\'e7\'e3o a An\'e1lise Fatorial Por Componentes Principais ###\
+\
+# Teste de esfericidade de Bartlett\
+\
+cortest.bartlett(dados[, 1:4])\
+\
+# Elabora\'e7\'e3o da an\'e1lise fatorial por componentes principais\
+\
+fatorial <- principal(dados[, 1:4],\
+                      nfactors = length(dados[, 1:4]),\
+                      rotate = "none",\
+                      scores = TRUE)\
+fatorial\
+\
+# Eigenvalues (autovalores)\
+\
+eigenvalues <- round(fatorial$values, 5)\
+eigenvalues\
+\
+# Soma dos eigenvalues = 4 (quantidade de vari\'e1veis na an\'e1lise)\
+# Tamb\'e9m representa a quantidade m\'e1xima de poss\'edveis fatores na an\'e1lise\
+\
+round(sum(eigenvalues), 2)\
+\
+# Identifica\'e7\'e3o da vari\'e2ncia compartilhada em cada fator\
+\
+variancia_compartilhada <- as.data.frame(fatorial$Vaccounted) %>% \
+  slice(1:3)\
+\
+rownames(variancia_compartilhada) <- c("Autovalores",\
+                                       "Prop. da Vari\'e2ncia",\
+                                       "Prop. da Vari\'e2ncia Acumulada")\
+\
+# Vari\'e2ncia compartilhada pelas vari\'e1veis originais para a forma\'e7\'e3o de cada fator\
+\
+round(variancia_compartilhada, 3) %>%\
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped", \
+                full_width = FALSE, \
+                font_size = 20)\
+\
+# C\'e1lculo dos scores fatoriais\
+\
+scores_fatoriais <- as.data.frame(fatorial$weights)\
+\
+# Visualiza\'e7\'e3o dos scores fatoriais\
+\
+round(scores_fatoriais, 3) %>%\
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped", \
+                full_width = FALSE, \
+                font_size = 20)\
+\
+# C\'e1lculo dos fatores propriamente ditos\
+\
+fatores <- as.data.frame(fatorial$scores)\
+\
+View(fatores)\
+\
+# Coeficientes de correla\'e7\'e3o de Pearson para cada par de fatores (ortogonais)\
+\
+rho <- rcorr(as.matrix(fatores), type="pearson")\
+round(rho$r, 4)\
+\
+# C\'e1lculo das cargas fatoriais\
+\
+cargas_fatoriais <- as.data.frame(unclass(fatorial$loadings))\
+\
+# Visualiza\'e7\'e3o das cargas fatoriais\
+\
+round(cargas_fatoriais, 3) %>%\
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped", \
+                full_width = FALSE, \
+                font_size = 20)\
+\
+# C\'e1lculo das comunalidades\
+\
+comunalidades <- as.data.frame(unclass(fatorial$communality)) %>%\
+  rename(comunalidades = 1)\
+\
+# Visualiza\'e7\'e3o das comunalidades (aqui s\'e3o iguais a 1 para todas as vari\'e1veis)\
+# Foram extra\'eddos 4 fatores neste primeiro momento\
+\
+round(comunalidades, 3) %>%\
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped",\
+                full_width = FALSE,\
+                font_size = 20)\
+\
+### Elabora\'e7\'e3o da An\'e1lise Fatorial por Componentes Principais ###\
+### Fatores extra\'eddos a partir de autovalores maiores que 1 ###\
+\
+# Defini\'e7\'e3o da quantidade de fatores com eigenvalues maiores que 1\
+\
+k <- sum(eigenvalues > 1)\
+print(k)\
+\
+# Elabora\'e7\'e3o da an\'e1lise fatorial por componentes principais\
+# Com quantidade 'k' de fatores com eigenvalues maiores que 1\
+\
+fatorial2 <- principal(dados[, 1:4],\
+                      nfactors = k,\
+                      rotate = "none",\
+                      scores = TRUE)\
+fatorial2\
+\
+# C\'e1lculo das comunalidades com apenas os 'k' ('k' = 2) primeiros fatores\
+\
+comunalidades2 <- as.data.frame(unclass(fatorial2$communality)) %>%\
+  rename(comunalidades = 1)\
+\
+# Visualiza\'e7\'e3o das comunalidades com apenas os 'k' ('k' = 2) primeiros fatores\
+\
+round(comunalidades2, 3) %>%\
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped",\
+                full_width = FALSE,\
+                font_size = 20)\
+\
+# Loading plot com as cargas dos 'k' ('k' = 2) primeiros fatores\
+\
+cargas_fatoriais[, 1:2] %>% \
+  data.frame() %>%\
+  rownames_to_column("vari\'e1veis") %>%\
+  ggplot(aes(x = PC1, y = PC2, label = vari\'e1veis)) +\
+  geom_point(color = "darkorchid",\
+             size = 3) +\
+  geom_text_repel() +\
+  geom_vline(aes(xintercept = 0), linetype = "dashed", color = "orange") +\
+  geom_hline(aes(yintercept = 0), linetype = "dashed", color = "orange") +\
+  expand_limits(x= c(-1.25, 0.25), y=c(-0.25, 1)) +\
+  theme_bw()\
+\
+# Adicionando os fatores extra\'eddos no banco de dados original\
+\
+dados <- bind_cols(dados,\
+                           "fator 1" = fatores$PC1, \
+                           "fator 2" = fatores$PC2)\
+\
+# Cria\'e7\'e3o de um ranking Crit\'e9rio da soma ponderada e ordenamento)\
+\
+dados$ranking <- fatores$PC1 * variancia_compartilhada$PC1[2] +\
+                         fatores$PC2 * variancia_compartilhada$PC2[2]\
+\
+# Visualizando o ranking final\
+\
+dados %>%\
+  arrange(desc(ranking)) %>%\
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped",\
+                full_width = FALSE,\
+                font_size = 17)\
+\
+\
+##############################################################################\
+#  An\'e1lise de Cluster - M\'e9todo Hier\'e1rquico\
+#  Dr. Luander Bernardes                                                                                                  \
+#  Data: ago, 2023                                                                                                             \
+#  R vers\'e3o 4.3.1 (2022-10-31)\
+#  Fonte: F\'e1vero e Belfiore, 2017\
+############################################################################### \
+\
+\
+pacotes <- c("plotly", #plataforma gr\'e1fica\
+             "tidyverse", #carregar outros pacotes do R\
+             "ggrepel", #geoms de texto e r\'f3tulo para 'ggplot2' que ajudam a\
+                        #evitar sobreposi\'e7\'e3o de textos\
+             "knitr", "kableExtra", #formata\'e7\'e3o de tabelas\
+             "reshape2", #fun\'e7\'e3o 'melt'\
+             "misc3d", #gr\'e1ficos 3D\
+             "plot3D", #gr\'e1ficos 3D\
+             "cluster", #fun\'e7\'e3o 'agnes' para elabora\'e7\'e3o de clusters hier\'e1rquicos\
+             "factoextra", #fun\'e7\'e3o 'fviz_dend' para constru\'e7\'e3o de dendrogramas\
+             "ade4") #fun\'e7\'e3o 'ade4' para matriz de dist\'e2ncias em var. bin\'e1rias\
+\
+if(sum(as.numeric(!pacotes %in% installed.packages())) != 0)\{\
+  instalador <- pacotes[!pacotes %in% installed.packages()]\
+  for(i in 1:length(instalador)) \{\
+    install.packages(instalador, dependencies = T)\
+    break()\}\
+  sapply(pacotes, require, character = T) \
+\} else \{\
+  sapply(pacotes, require, character = T) \
+\}\
+\
+# Carregamento da base de dados das caracter\'edsitcas dos exoplanetas \
+\
+dados <- read.csv("kmpca.csv", sep =";")\
+\
+# Visualiza\'e7\'e3o da base de dados\
+\
+dados %>%\
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped", \
+                full_width = FALSE,\
+                font_size = 20)\
+\
+\
+# Estat\'edsticas descritivas\
+\
+summary(dados)\
+\
+## Como as vari\'e1veis est\'e3o na mesma unidade de medida, n\'e3o vamos padronizar\
+\
+# Se for necess\'e1rio padronizar, \'e9 poss\'edvel utilizar a fun\'e7\'e3o scale()\
+\
+dados_padronizado <- as.data.frame(scale(dados[,1:4]))\
+rownames(dados_padronizado) <- dados$esi\
+\
+\
+# Esquema de aglomera\'e7\'e3o hier\'e1rquico \
+\
+# Matriz de dissimilaridades\
+\
+matriz_D <- dados_padronizado %>% \
+  select(esi, raio_planeta, massa_planeta, st_lum) %>% \
+  dist(method = "euclidean")\
+\
+# Method: parametriza\'e7\'e3o da dist\'e2ncia a ser utilizada\
+\
+## "euclidean": dist\'e2ncia euclidiana\
+\
+\
+# Visualizando a matriz de dissimilaridades\
+\
+data.matrix(matriz_D) %>% \
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped", \
+                full_width = FALSE, \
+                font_size = 20)\
+\
+# Elabora\'e7\'e3o da clusteriza\'e7\'e3o hier\'e1rquica\
+\
+cluster_hier <- agnes(x = matriz_D, method = "complete")\
+\
+# O input \'e9 a matriz de dist\'e2ncias obtida anteriormente\
+\
+# Method \'e9 o tipo de encadeamento:\
+## "complete": encadeamento completo (furthest neighbor ou complete linkage)\
+\
+# Defini\'e7\'e3o do esquema hier\'e1rquico de aglomera\'e7\'e3o\
+\
+# As dist\'e2ncias para as combina\'e7\'f5es em cada est\'e1gio\
+\
+coeficientes <- sort(cluster_hier$height, decreasing = FALSE) \
+coeficientes\
+\
+esquema <- as.data.frame(cbind(cluster_hier$merge, coeficientes))\
+names(esquema) <- c("Cluster1", "Cluster2", "Coeficientes")\
+esquema\
+\
+# Visualiza\'e7\'e3o do esquema hier\'e1rquico de aglomera\'e7\'e3o\
+\
+esquema %>%\
+  kable(row.names = T) %>%\
+  kable_styling(bootstrap_options = "striped", \
+                full_width = FALSE, \
+                font_size = 20)\
+\
+# Constru\'e7\'e3o do dendrograma\
+\
+dev.off()\
+fviz_dend(x = cluster_hier)\
+\
+# Dendrograma com visualiza\'e7\'e3o dos clusters (defini\'e7\'e3o do n\'famero de clusters)\
+\
+fviz_dend(x = cluster_hier,\
+          k = 4,\
+          k_colors = c("deeppink4", "darkviolet", "deeppink", "blue"),\
+          color_labels_by_k = F,\
+          rect = T,\
+          rect_fill = T,\
+          lwd = 1,\
+          ggtheme = theme_bw())\
+\
+# Criando vari\'e1vel categ\'f3rica para indica\'e7\'e3o do cluster no banco de dados\
+\
+## O argumento 'k' indica a quantidade de clusters\
+\
+dados_padronizado$cluster_H <- factor(cutree(tree = cluster_hier, k = 4))\
+\
+# Visualiza\'e7\'e3o da base de dados com a aloca\'e7\'e3o das observa\'e7\'f5es nos clusters\
+\
+dados_padronizado %>%\
+  kable() %>%\
+  kable_styling(bootstrap_options = "striped", \
+                full_width = FALSE,\
+                font_size = 20)\
+\
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6481\tx7201\tx7921\tx8641\tx9361\tx10081\tx10801\tx11521\tx12242\tx12962\tx13682\tx14402\tx15122\tx15842\tx16562\tx17282\tx18002\tx18723\tx19443\tx20163\tx20883\tx21603\tx22323\tx23043\tx23763\tx24483\tx25204\tx25924\tx26644\tx27364\tx28084\tx28804\tx29524\tx30244\tx30965\tx31685\tx32405\tx33125\tx33845\tx34565\tx35285\tx36005\tx36725\tx37446\tx38166\tx38886\tx39606\tx40326\tx41046\tx41766\tx42486\tx43207\tx43927\tx44647\tx45367\tx46087\li80\fi-80\pardirnatural\partightenfactor0
+\cf4 \cb5 ##############################################################################\
+#  An\'e1lise de Cluster - M\'e9todo do Cotovelo (\'93Elbow\'94), PCA e algoritmo K-Means\
+#  Dr. Luander Bernardes                                                                                                  \
+#  Data: ago, 2023                                                                                                             \
+#  Python vers\'e3o 3 (2022-10-31)\
+############################################################################### \
+\
+\pard\pardeftab720\partightenfactor0
+\cf2 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec6 # Importa\'e7\'e3o de bibliotecas\cf2 \strokec7 \
+\
+\cf2 \strokec8 import\cf2 \strokec7  numpy \cf2 \strokec8 as\cf2 \strokec7  np\
+\cf2 \strokec8 import\cf2 \strokec7  pandas \cf2 \strokec8 as\cf2 \strokec7  pd\
+\cf2 \strokec8 from\cf2 \strokec7  collections \cf2 \strokec8 import\cf2 \strokec7  Counter\
+\cf2 \strokec8 import\cf2 \strokec7  matplotlib.pyplot \cf2 \strokec8 as\cf2 \strokec7  plt\
+\cf2 \strokec8 from\cf2 \strokec7  matplotlib \cf2 \strokec8 import\cf2 \strokec7  colors\
+\cf2 \strokec8 import\cf2 \strokec7  seaborn \cf2 \strokec8 as\cf2 \strokec7  sns\
+\cf2 \strokec8 import\cf2 \strokec7  warnings\
+\cf2 \strokec8 import\cf2 \strokec7  plotly.express \cf2 \strokec8 as\cf2 \strokec7  px\
+\
+# Carregando o banco de dados \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6481\tx7201\tx7921\tx8641\tx9361\tx10081\tx10801\tx11521\tx12242\tx12962\tx13682\tx14402\tx15122\tx15842\tx16562\tx17282\tx18002\tx18723\tx19443\tx20163\tx20883\tx21603\tx22323\tx23043\tx23763\tx24483\tx25204\tx25924\tx26644\tx27364\tx28084\tx28804\tx29524\tx30244\tx30965\tx31685\tx32405\tx33125\tx33845\tx34565\tx35285\tx36005\tx36725\tx37446\tx38166\tx38886\tx39606\tx40326\tx41046\tx41766\tx42486\tx43207\tx43927\tx44647\tx45367\tx46087\li80\fi-80\pardirnatural\partightenfactor0
+\cf4 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec7 exoplanet = pd.read_csv(\cf2 \strokec9 \'91dados.csv\'92\cf2 \strokec7 , sep =\cf2 \strokec9 ','\cf2 \strokec7 ,encoding = \cf2 \strokec9 'iso-8859-1'\cf2 \strokec7 )\
+\
+# Explorando o dataset\
+\
+exoplanet.head(\cf2 \strokec10 10\cf2 \strokec7 )\
+exoplanet.describe()\
+exoplanet.shape\
+\
+# Implementa\'e7\'e3o do algoritmo K-means\
+\
+\cf2 \strokec8 from\cf2 \strokec7  sklearn.preprocessing \cf2 \strokec8 import\cf2 \strokec7  StandardScaler\
+\
+escala = StandardScaler()\
+dados_esc = escala.fit_transform(exoplanet)\
+\
+# M\'e9todo do Cotovelo (\'93Elbow\'94) e an\'e1lise via K-Means \
+\
+\cf2 \strokec8 from\cf2 \strokec7  sklearn.cluster \cf2 \strokec8 import\cf2 \strokec7  KMeans\
+wcss = []\
+\cf2 \strokec8 for\cf2 \strokec7  i \cf2 \strokec11 in\cf2 \strokec7  \cf2 \strokec12 range\cf2 \strokec7 (\cf2 \strokec10 1\cf2 \strokec7 , \cf2 \strokec10 11\cf2 \strokec7 ):\
+    kmeans = KMeans(n_clusters = i, init = \cf2 \strokec9 'k-means++'\cf2 \strokec7 , random_state = \cf2 \strokec10 5\cf2 \strokec7 , max_iter = \cf2 \strokec10 300\cf2 \strokec7 )\
+    kmeans.fit(dados_esc)\
+    \cf2 \strokec6 # inertia: M\'e9todo para gerar o wcss\cf2 \strokec7 \
+    wcss.append(kmeans.inertia_)\
+\
+\cf2 \strokec8 import\cf2 \strokec7  matplotlib.pyplot \cf2 \strokec8 as\cf2 \strokec7  plt\
+\cf2 \strokec8 import\cf2 \strokec7  seaborn \cf2 \strokec8 as\cf2 \strokec7  sns\
+\
+# Visualiza\'e7\'e3o gr\'e1fica da quantidade de clusters a ser inserida no algoritmo K-Means\
+\
+plt.figure(figsize=(\cf2 \strokec10 10\cf2 \strokec7 ,\cf2 \strokec10 5\cf2 \strokec7 ))\
+sns.lineplot(wcss,marker=\cf2 \strokec9 'o'\cf2 \strokec7 ,color=\cf2 \strokec9 'red'\cf2 \strokec7 )\
+plt.title(\cf2 \strokec9 'The Elbow Method'\cf2 \strokec7 )\
+plt.xlabel(\cf2 \strokec9 'N\'famero de clusters'\cf2 \strokec7 )\
+plt.ylabel(\cf2 \strokec9 'WCSS'\cf2 \strokec7 );\
+\
+Implementa\'e7\'e3o do K-Means\
+\
+kmeans = KMeans(n_clusters = \cf2 \strokec10 4\cf2 \strokec7 , init = \cf2 \strokec9 'k-means++'\cf2 \strokec7 , random_state = \cf2 \strokec10 5\cf2 \strokec7 , max_iter = \cf2 \strokec10 300\cf2 \strokec7 )\
+kmeans1 = kmeans.fit(dados_esc)\
+\
+\cf2 \strokec6 # Coordenadas dos Centr\'f3ides\
+\cf2 \strokec7 \
+centroides = kmeans1.cluster_centers_\
+centroides\
+\
+\cf2 \strokec6 # Invers\'e3o do Escalonamento\cf2 \strokec7 \
+\
+escala.inverse_transform(kmeans1.cluster_centers_)\
+\
+\cf2 \strokec6 # Classifica\'e7\'e3o dos dados\
+\cf2 \strokec7 \
+classificacao = kmeans1.labels_\
+classificacao\
+\
+agrupamento = pd.DataFrame(classificacao, columns = [\cf2 \strokec9 'cluster'\cf2 \strokec7 ])\
+df = pd.concat([exoplanet, agrupamento], axis = \cf2 \strokec10 1\cf2 \strokec7 )\
+df\
+df.shape\
+\
+# Implementa\'e7\'e3o da An\'e1lise por Componentes Principais (PCA)\
+\
+\cf2 \strokec8 from\cf2 \strokec7  sklearn.decomposition \cf2 \strokec8 import\cf2 \strokec7  PCA\
+pca = PCA(n_components = \cf2 \strokec10 2\cf2 \strokec7 )\
+df_pca = pca.fit_transform(dados_esc)\
+df_pca\
+\
+\cf2 \strokec6 # Raz\'e3o das vari\'e1veis explicativas\cf2 \strokec7 \
+\
+pca.explained_variance_ratio_\
+pca.explained_variance_ratio_.\cf2 \strokec12 sum\cf2 \strokec7 ()\
+\
+# Reaplica\'e7\'e3o do M\'e9todo K-Means para a PCA\
+\
+\cf2 \strokec8 from\cf2 \strokec7  sklearn.cluster \cf2 \strokec8 import\cf2 \strokec7  KMeans\
+wcss = []\
+\cf2 \strokec8 for\cf2 \strokec7  i \cf2 \strokec11 in\cf2 \strokec7  \cf2 \strokec12 range\cf2 \strokec7 (\cf2 \strokec10 1\cf2 \strokec7 , \cf2 \strokec10 11\cf2 \strokec7 ):\
+    kmeans = KMeans(n_clusters = i, init = \cf2 \strokec9 'k-means++'\cf2 \strokec7 , random_state = \cf2 \strokec10 5\cf2 \strokec7 , max_iter = \cf2 \strokec10 300\cf2 \strokec7 )\
+    kmeans.fit(df_pca)\
+    \cf2 \strokec6 # inertia: M\'e9todo para gerar o wcss\cf2 \strokec7 \
+    wcss.append(kmeans.inertia_)\
+\
+\cf2 \strokec8 import\cf2 \strokec7  matplotlib.pyplot \cf2 \strokec8 as\cf2 \strokec7  plt\
+\cf2 \strokec8 import\cf2 \strokec7  seaborn \cf2 \strokec8 as\cf2 \strokec7  sns\
+\
+plt.figure(figsize=(\cf2 \strokec10 10\cf2 \strokec7 ,\cf2 \strokec10 5\cf2 \strokec7 ))\
+sns.lineplot(wcss,marker=\cf2 \strokec9 'o'\cf2 \strokec7 ,color=\cf2 \strokec9 'red'\cf2 \strokec7 )\
+plt.title(\cf2 \strokec9 'The Elbow Method'\cf2 \strokec7 )\
+plt.xlabel(\cf2 \strokec9 'N\'famero de clusters'\cf2 \strokec7 )\
+plt.ylabel(\cf2 \strokec9 'WCSS'\cf2 \strokec7 );\
+\
+kmeans = KMeans(n_clusters = \cf2 \strokec10 4\cf2 \strokec7 , init = \cf2 \strokec9 'k-means++'\cf2 \strokec7 , random_state = \cf2 \strokec10 5\cf2 \strokec7 , max_iter = \cf2 \strokec10 300\cf2 \strokec7 )\
+kmeans2 = kmeans.fit(df_pca)\
+\
+\cf2 \strokec6 # Coordenadas dos Centr\'f3ides\
+\cf2 \strokec7 \
+centroides = kmeans2.cluster_centers_\
+centroides\
+\
+\cf2 \strokec6 # Classifica\'e7\'e3o dos dados\
+\cf2 \strokec7 \
+classificacao2 = kmeans2.labels_\
+classificacao2\
+\
+\cf2 \strokec8 import\cf2 \strokec7  plotly.express \cf2 \strokec8 as\cf2 \strokec7  px\
+\cf2 \strokec8 import\cf2 \strokec7  plotly.graph_objects \cf2 \strokec8 as\cf2 \strokec7  go\
+\
+dados_esc.shape\
+\
+agrupamento2 = pd.DataFrame(classificacao2, columns = [\cf2 \strokec9 'cluster'\cf2 \strokec7 ])\
+df1 = pd.concat([exoplanet, agrupamento2], axis = \cf2 \strokec10 1\cf2 \strokec7 )\
+df1.head(\cf2 \strokec10 240\cf2 \strokec7 )\
+df1.shape\
+\
+# Visualiza\'e7\'e3o gr\'e1fica dos cluster formado ap\'f3s a redu\'e7\'e3o da dimensionalidade\
+\
+graf1 = px.scatter(x = df_pca[:,\cf2 \strokec10 0\cf2 \strokec7 ], y = df_pca[:,\cf2 \strokec10 1\cf2 \strokec7 ], color = classificacao2)\
+graf2 = px.scatter(x = centroides[:,\cf2 \strokec10 0\cf2 \strokec7 ], y = centroides[:,\cf2 \strokec10 1\cf2 \strokec7 ], size = [\cf2 \strokec10 15\cf2 \strokec7 , \cf2 \strokec10 15\cf2 \strokec7 , \cf2 \strokec10 15\cf2 \strokec7 , \cf2 \strokec10 15\cf2 \strokec7 ])\
+graf3 = go.Figure(data = graf1.data + graf2.data)\
+graf3.update_layout(width=\cf2 \strokec10 700\cf2 \strokec7 ,height=\cf2 \strokec10 600\cf2 \strokec7 )\
+graf3.update_xaxes(title = \cf2 \strokec9 'Componente 1'\cf2 \strokec7 )\
+graf3.update_yaxes(title = \cf2 \strokec9 'Componente 2'\cf2 \strokec7 )\
+graf3.show()\cf0 \cb1 \strokec7 \
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6481\tx7201\tx7921\tx8641\tx9361\tx10081\tx10801\tx11521\tx12242\tx12962\tx13682\tx14402\tx15122\tx15842\tx16562\tx17282\tx18002\tx18723\tx19443\tx20163\tx20883\tx21603\tx22323\tx23043\tx23763\tx24483\tx25204\tx25924\tx26644\tx27364\tx28084\tx28804\tx29524\tx30244\tx30965\tx31685\tx32405\tx33125\tx33845\tx34565\tx35285\tx36005\tx36725\tx37446\tx38166\tx38886\tx39606\tx40326\tx41046\tx41766\tx42486\tx43207\tx43927\tx44647\tx45367\tx46087\li80\fi-80\pardirnatural\partightenfactor0
+\cf13 \cb14 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 \
+\
+\
+\
+\
+\
+\
+\cf13 \cb15 \
+}
